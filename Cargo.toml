@@ -3,6 +3,9 @@ name = "vinput-ws-asr"
 version = "0.1.0"
 edition = "2021"
 description = "Rust realtime WebSocket ASR streaming provider for vLLM /v1/realtime (Qwen3-ASR)"
+authors = ["yjymosheng <yjymosheng@gmail.com>"]
+license = "GPL-3.0-or-later"
+repository = "https://github.com/yjymosheng/rust-vinput-ws-asr"
 
 [lib]
 name = "vinput_ws_asr"
