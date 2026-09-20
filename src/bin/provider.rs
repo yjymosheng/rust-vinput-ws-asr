@@ -192,6 +192,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut cleaner = StreamCleaner::new();
     let mut main_loop_done = false;
     let mut saw_final = false;
+    let mut final_sent = false;
+    let mut pending_commit = false;
 
     'outer: loop {
         // Event-first: drain all pending WS events before reading stdin,
@@ -212,7 +214,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         } else {
                             strip_prefix(&text)
                         };
-                        if !t.is_empty() {
+                        if !t.is_empty() && !final_sent {
+                            final_sent = true;
                             write_event(serde_json::json!({ "type": "final", "text": t }));
                         }
                         break 'outer;
@@ -253,7 +256,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         } else {
                             strip_prefix(&text)
                         };
-                        if !t.is_empty() {
+                        if !t.is_empty() && !final_sent {
+                            final_sent = true;
                             write_event(serde_json::json!({ "type": "final", "text": t }));
                         }
                         break 'outer;
@@ -293,6 +297,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 match etype {
                     "audio" => {
                         let b64 = event.get("audio_base64").and_then(|v| v.as_str()).unwrap_or("");
+                        let commit_flag = event.get("commit").and_then(|v| v.as_bool()).unwrap_or(false);
                         if let Ok(pcm) = base64::engine::general_purpose::STANDARD.decode(b64) {
                             if !pcm.is_empty() {
                                 if let Err(e) = tx.append_bytes(&pcm).await {
@@ -300,12 +305,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                     write_event(serde_json::json!({ "type": "error", "message": e.to_string() }));
                                     break 'outer;
                                 }
+                                pending_commit = true;
+                            }
+                        }
+                        if commit_flag {
+                            // This audio block is the final chunk; commit now.
+                            if pending_commit {
+                                if let Err(e) = tx.finish().await {
+                                    log(&format!("audio commit err: {e}"));
+                                }
+                                pending_commit = false;
                             }
                         }
                     }
                     "finish" => {
-                        if let Err(e) = tx.finish().await {
-                            log(&format!("finish err: {e}"));
+                        if pending_commit {
+                            if let Err(e) = tx.finish().await {
+                                log(&format!("finish err: {e}"));
+                            }
+                            pending_commit = false;
                         }
                         main_loop_done = true;
                     }
@@ -317,10 +335,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         }
     }
 
-    if !saw_final {
+    if !final_sent && saw_final {
         // Fallback: emit accumulated cleaned text if we have any.
         let t = cleaner.current().trim().to_string();
         if !t.is_empty() {
+            final_sent = true;
             write_event(serde_json::json!({ "type": "final", "text": t }));
         }
     }
