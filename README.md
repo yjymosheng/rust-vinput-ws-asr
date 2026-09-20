@@ -43,3 +43,11 @@ target/debug/vinput-ws-provider
 - futures-util
 - serde / serde_json
 - base64
+
+## Environment Variables
+
+- `VINPUT_ASR_URL` (fallback `VINPUT_WS_URL`): WebSocket endpoint, e.g. `ws://192.168.102.10:7000/v1/realtime`
+- `VINPUT_ASR_MODEL` (fallback `VINPUT_WS_MODEL`): served model name, e.g. `qwen3-asr`
+- `VINPUT_ASR_DEBUG` (fallback `VINPUT_WS_DEBUG`): set to `1` to enable debug logging to `/tmp/vinput-ws-provider.log`
+
+The `VINPUT_ASR_*` names follow the vinput-registry provider env convention.

@@ -101,8 +101,14 @@ fn log(msg: impl AsRef<str>) {
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     log("=== provider start (single-connection streaming) ===");
 
-    let url = std::env::var("VINPUT_WS_URL").unwrap_or_else(|_| DEFAULT_URL.to_string());
-    let model = std::env::var("VINPUT_WS_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.to_string());
+    // Prefer vinput-registry-compliant VINPUT_ASR_* names; also accept the
+    // older VINPUT_WS_* names used by earlier local setups.
+    let url = std::env::var("VINPUT_ASR_URL")
+        .or_else(|_| std::env::var("VINPUT_WS_URL"))
+        .unwrap_or_else(|_| DEFAULT_URL.to_string());
+    let model = std::env::var("VINPUT_ASR_MODEL")
+        .or_else(|_| std::env::var("VINPUT_WS_MODEL"))
+        .unwrap_or_else(|_| DEFAULT_MODEL.to_string());
 
     // Connect once for the whole session.
     let (mut tx, rx) = match asr::connect(&url, 16000, CHUNK_MS).await {
