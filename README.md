@@ -18,12 +18,13 @@ transcription results back to vinput.
 ## Build
 
 ```bash
-# Using nix:
+# Reproducible Nix build (pinned flake toolchain + Cargo.lock):
+nix build .#
+# Output: ./result/bin/vinput-ws-provider
+
+# Or use the dev shell and cargo directly:
 nix develop --offline
 cargo build --release
-
-# Or using a Rust toolchain + offline cargo cache:
-./cargo-offline.sh release
 ```
 
 ## Test

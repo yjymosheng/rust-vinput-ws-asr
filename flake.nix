@@ -22,6 +22,7 @@
           inherit system;
           overlays = [ (import rust-overlay) ];
         };
+
         rustToolchain = pkgs.rust-bin.stable.latest.default.override {
           extensions = [
             "rust-src"
@@ -30,8 +31,29 @@
             "clippy"
           ];
         };
+
+        # Same Rust toolchain used in `nix develop`.
+        rustPlatform = pkgs.makeRustPlatform {
+          rustc = rustToolchain;
+          cargo = rustToolchain;
+        };
+
+        src = pkgs.lib.cleanSource ./.;
+
+        provider = rustPlatform.buildRustPackage {
+          pname = "vinput-ws-provider";
+          version = "0.1.0";
+          src = src;
+          cargoLock.lockFile = ./Cargo.lock;
+          nativeBuildInputs = with pkgs; [
+            pkg-config
+          ];
+        };
       in
       {
+        packages.default = provider;
+        packages.provider = provider;
+
         devShells.default = pkgs.mkShell {
           packages = with pkgs; [
             rustToolchain
