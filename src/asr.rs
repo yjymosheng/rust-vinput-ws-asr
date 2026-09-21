@@ -66,6 +66,11 @@ enum WireEvent {
         #[serde(default)]
         id: String,
     },
+    #[serde(rename = "session.updated")]
+    Updated {
+        #[serde(default)]
+        id: String,
+    },
     #[serde(rename = "transcription.delta")]
     Delta {
         #[serde(default, rename = "delta")]
@@ -95,6 +100,7 @@ fn wire_to_event(ev: WireEvent) -> Option<ServerEvent> {
     Some(match ev {
         WireEvent::Unknown => return None,
         WireEvent::Created { id } => ServerEvent::Created { id },
+        WireEvent::Updated { id } => ServerEvent::Created { id },
         WireEvent::Delta { text } => ServerEvent::Delta { text },
         WireEvent::Done { text, usage } => ServerEvent::Done { text, usage },
         WireEvent::Error { error, message, code } => {

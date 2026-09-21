@@ -85,7 +85,11 @@ fn write_event(v: serde_json::Value) {
 }
 
 fn log(msg: impl AsRef<str>) {
-    if std::env::var("VINPUT_WS_DEBUG").map(|v| v == "1").unwrap_or(false) {
+    let debug_enabled = std::env::var("VINPUT_ASR_DEBUG")
+        .or_else(|_| std::env::var("VINPUT_WS_DEBUG"))
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("yes") || v.eq_ignore_ascii_case("on"))
+        .unwrap_or(false);
+    if debug_enabled {
         if let Ok(mut f) = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
@@ -169,6 +173,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         return Ok(());
     }
     log("start_generation sent");
+    // Defensive readiness flag: audio should not be sent before the upstream
+    // session is confirmed (handshake already waits for session.created, but
+    // this also tolerates endpoints that confirm via session.updated).
+    let mut session_ready = true;
 
     // stdin lines -> channel.
     let (stdin_tx, mut stdin_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
@@ -298,6 +306,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     "audio" => {
                         let b64 = event.get("audio_base64").and_then(|v| v.as_str()).unwrap_or("");
                         let commit_flag = event.get("commit").and_then(|v| v.as_bool()).unwrap_or(false);
+                        // Defensive: if session not confirmed yet, wait briefly
+                        // (usually already ready after handshake).
+                        if !session_ready {
+                            let ready_deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+                            while !session_ready && tokio::time::Instant::now() < ready_deadline {
+                                match tokio::time::timeout(Duration::from_millis(50), event_rx.recv()).await {
+                                    Ok(Some(ServerEvent::Created { .. })) => session_ready = true,
+                                    Ok(Some(_)) => {}
+                                    _ => {}
+                                }
+                            }
+                        }
                         if let Ok(pcm) = base64::engine::general_purpose::STANDARD.decode(b64) {
                             if !pcm.is_empty() {
                                 if let Err(e) = tx.append_bytes(&pcm).await {
