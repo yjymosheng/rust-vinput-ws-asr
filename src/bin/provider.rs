@@ -37,10 +37,14 @@ fn strip_prefix(text: &str) -> String {
     while let Some(rel) = text[pos..].find(ASR_TEXT_TAG) {
         let tag = pos + rel;
         let seg = &text[pos..tag];
+        // Remove a trailing `language <word>` only when it is immediately
+        // followed by an <asr_text> marker (i.e. model metadata).
         out.push_str(strip_trailing_lang_prefix(seg));
         pos = tag + ASR_TEXT_TAG.len();
     }
-    out.push_str(strip_trailing_lang_prefix(&text[pos..]));
+    // Final tail: keep as-is, so ordinary text like 'select language English'
+    // is not truncated.
+    out.push_str(&text[pos..]);
     out.replace('\n', "")
 }
 
@@ -359,7 +363,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // Fallback: emit accumulated cleaned text if we have any.
         let t = cleaner.current().trim().to_string();
         if !t.is_empty() {
-            final_sent = true;
             write_event(serde_json::json!({ "type": "final", "text": t }));
         }
     }
@@ -371,4 +374,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let _ = reader_handle.await;
     log("=== provider end ===");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn strip_prefix_removes_language_markers() {
+        assert_eq!(strip_prefix("language Chinese<asr_text>你好，世界"), "你好，世界");
+        assert_eq!(strip_prefix("language English<asr_text>hello"), "hello");
+    }
+
+    #[test]
+    fn strip_prefix_keeps_multiple_segments() {
+        assert_eq!(
+            strip_prefix("language Chinese<asr_text>段1\nlanguage Chinese<asr_text>段2"),
+            "段1段2"
+        );
+    }
+
+    #[test]
+    fn strip_prefix_preserves_ordinary_text() {
+        // 'select language English' contains 'language English' but no
+        // <asr_text> marker; it must not be truncated.
+        assert_eq!(strip_prefix("select language English"), "select language English");
+    }
+
+    #[test]
+    fn cleaner_returns_full_clean_text() {
+        let mut c = StreamCleaner::new();
+        assert_eq!(c.push_delta("language Chinese<asr_text>你好"), "你好");
+        assert_eq!(c.push_delta("，世界"), "你好，世界");
+        assert_eq!(c.current(), "你好，世界");
+    }
 }

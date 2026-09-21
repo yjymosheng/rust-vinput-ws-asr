@@ -1,21 +1,60 @@
 # vinput-ws-asr
 
-Rust realtime WebSocket ASR streaming provider for vLLM `/v1/realtime` (Qwen3-ASR).
+Rust realtime WebSocket ASR streaming provider for vinput.
 
-## 功能
-- 一条 WebSocket 连接，持续推流（不做分段/重连）。
-- 边发边收：实时收到 `transcription.delta` 即输出 `partial`。
-- 自动剥离模型前缀 `language {lang}<asr_text>`，多段换行合并。
-- vinput `finish` 后输出最终文本 `final`，然后 `closed`。
+It connects to any service exposing an OpenAI-Realtime-style ASR WebSocket API
+(such as vLLM `/v1/realtime`), streams PCM incrementally, and forwards cleaned
+transcription results back to vinput.
 
-## vinput 协议
+## Features
+
+- Single WebSocket connection, continuous streaming (no segmentation/reconnect).
+- Concurrent send/receive; `transcription.delta` is emitted as `partial` live.
+- Strips Qwen3-ASR `language {lang}<asr_text>` model prefixes and joins segments.
+- `final` is emitted exactly once; `session_started` is emitted exactly once.
+- Pure Rust, no Python/runtime dependencies beyond the compiled binary.
+- Env-configurable endpoint/model/debug via `VINPUT_ASR_*`.
+
+## Build
+
+```bash
+# Using nix:
+nix develop --offline
+cargo build --release
+
+# Or using a Rust toolchain + offline cargo cache:
+./cargo-offline.sh release
+```
+
+## Test
+
+```bash
+cargo test --release
+```
+
+## Run (vinput provider)
+
+The binary speaks vinput's command-streaming JSONL protocol over stdin/stdout:
+
+```bash
+VINPUT_ASR_URL=ws://127.0.0.1:7000/v1/realtime \
+VINPUT_ASR_MODEL=qwen3-asr \
+target/release/vinput-ws-provider
+```
+
+## vinput Protocol
+
 stdin:
+
 ```json
 {"type":"audio","audio_base64":"...","commit":false}
+{"type":"audio","audio_base64":"...","commit":true}
 {"type":"finish"}
 {"type":"cancel"}
 ```
+
 stdout:
+
 ```json
 {"type":"session_started"}
 {"type":"partial","text":"..."}
@@ -24,30 +63,22 @@ stdout:
 {"type":"closed"}
 ```
 
-## 构建
-```bash
-nix develop --offline   # 或使用仓库内 nix 工具链
-cargo build --bin vinput-ws-provider
-```
-
-## 运行
-```bash
-VINPUT_WS_URL=ws://192.168.102.10:7000/v1/realtime \
-VINPUT_WS_MODEL=qwen3-asr \
-target/debug/vinput-ws-provider
-```
-
-## 依赖
-- tokio
-- tokio-tungstenite
-- futures-util
-- serde / serde_json
-- base64
+`audio_base64` is mono `S16_LE` PCM at 16 kHz.
 
 ## Environment Variables
 
-- `VINPUT_ASR_URL` (fallback `VINPUT_WS_URL`): WebSocket endpoint, e.g. `ws://192.168.102.10:7000/v1/realtime`
-- `VINPUT_ASR_MODEL` (fallback `VINPUT_WS_MODEL`): served model name, e.g. `qwen3-asr`
-- `VINPUT_ASR_DEBUG` (fallback `VINPUT_WS_DEBUG`): set to `1` to enable debug logging to `/tmp/vinput-ws-provider.log`
+- `VINPUT_ASR_URL` (fallback `VINPUT_WS_URL`): WebSocket endpoint, e.g. `ws://127.0.0.1:7000/v1/realtime`.
+- `VINPUT_ASR_MODEL` (fallback `VINPUT_WS_MODEL`): served model name, e.g. `qwen3-asr`.
+- `VINPUT_ASR_DEBUG` (fallback `VINPUT_WS_DEBUG`): enable debug log to `/tmp/vinput-ws-provider.log` when set to `1`/`true`.
 
-The `VINPUT_ASR_*` names follow the vinput-registry provider env convention.
+`VINPUT_ASR_*` names follow the vinput-registry provider env convention.
+
+## Protocol Notes
+
+- A non-final `input_audio_buffer.commit` (`final:false`) is required to start
+  generation on vLLM realtime.
+- The provider accepts `commit:true` on the final audio block and will not send
+  a second final commit on `finish`.
+- `session.created` / `session.updated` are both treated as readiness signals.
+- The provider is intentionally model-agnostic; it does not modify or patch
+  the ASR server.
