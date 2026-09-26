@@ -32,6 +32,8 @@
           ];
         };
 
+        # Read the package version from Cargo.toml so it never goes stale.
+        cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
         # Same Rust toolchain used in `nix develop`.
         rustPlatform = pkgs.makeRustPlatform {
           rustc = rustToolchain;
@@ -42,7 +44,7 @@
 
         provider = rustPlatform.buildRustPackage {
           pname = "vinput-ws-provider";
-          version = "0.1.0";
+          version = cargoToml.package.version;
           src = src;
           cargoLock.lockFile = ./Cargo.lock;
           nativeBuildInputs = with pkgs; [
