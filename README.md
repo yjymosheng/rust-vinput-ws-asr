@@ -20,6 +20,13 @@ transcription results back to vinput.
 ```bash
 # Reproducible Nix build (pinned flake toolchain + Cargo.lock):
 nix build .#
+# The package version is read from Cargo.toml, so rebuilding after a version
+# bump produces a correctly-versioned derivation.
+
+# 或者直接 checkout 最新提交构建当前 main（需要能访问 GitHub）：
+git pull --ff-only
+nix build --refresh github:yjymosheng/rust-vinput-ws-asr
+
 # Output: ./result/bin/vinput-ws-provider
 
 # Or use the dev shell and cargo directly:
@@ -83,3 +90,36 @@ stdout:
 - `session.created` / `session.updated` are both treated as readiness signals.
 - The provider is intentionally model-agnostic; it does not modify or patch
   the ASR server.
+
+## Keeping up with the latest upstream
+
+This repository is the provider itself. To use the newest `main` instead of
+a previously locked revision, choose one of the options below:
+
+### Option A: rebuild from the local checkout (after `git pull`)
+
+```bash
+git pull --ff-only
+nix build .#
+```
+
+### Option B: update the flake input in your NixOS configuration
+
+In a NixOS configuration, the input already points at
+`github:yjymosheng/rust-vinput-ws-asr`. To bring it to the latest main:
+
+```bash
+cd /path/to/nixos
+nix flake lock --update-input vinput-ws-asr
+nixos-rebuild switch --flake .#
+```
+
+This updates `flake.lock` to the newest commit of `main` and then rebuilds/installs
+the newest `vinput-ws-provider` binary into the system store.
+
+### Version source
+
+- Crate version: `Cargo.toml` `[package].version` (currently `0.1.0`).
+- Nix derivation: reads the same value via `builtins.fromTOML (builtins.readFile ./Cargo.toml)`.
+
+Bump `Cargo.toml` only; `flake.nix` follows automatically.
